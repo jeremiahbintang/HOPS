@@ -63,16 +63,16 @@ class HOMPSModel:
         self.N_trunc = N_trunc
         self.N = self.N_bath + 1
         self.alternative_realization = alternative_realization
+        h_shape = h.shape 
         # get some useful operators
-        sigma_x, sigma_z, eye = operators.generate_physical_operators()
-        self.eye = eye
+        self.eye = np.eye(h_shape[0], h_shape[1])
         N, b_dagger, b, eye_aux = operators.generate_auxiallary_operators(N_trunc, rescale_aux)
         # construct H_mpo
-        self._H_mpo_template = [None]*(self.N_bath + 1)
-        self.H_mpo = [None]*(self.N_bath + 1)
-        self._H_mpo_template[0] = np.zeros((4, 4, 2, 2), dtype=complex)
-        self._H_mpo_template[0][0, 0, :, :] = -1.j * eye
-        if self.alternative_realization:
+        self._H_mpo_template = [None]*(self.N_bath + 1) # N_bath = 3 -> [None, None, None, None]
+        self.H_mpo = [None]*(self.N_bath + 1) # N_bath = 3 -> [None, None, None, None]
+        self._H_mpo_template[0] = np.zeros((4, 4, h_shape[0], h_shape[1]), dtype=complex) # [(4, 4, 2, 2), None, None, None]
+        self._H_mpo_template[0][0, 0, :, :] = -1.j * self.eye
+        if self.alternative_realization: 
             self._H_mpo_template[0][0, 1, :, :] = -1.j * L
             self._H_mpo_template[0][0, 2, :, :] = 1.j * np.conj(L).T
             self._H_mpo_template[0][0, 3, :, :] = h - 1.j * gamma_terminator * np.conj(L).T@L
