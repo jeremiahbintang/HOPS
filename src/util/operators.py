@@ -41,6 +41,19 @@ def generate_spin_boson_hamiltonian(delta=1, epsilon=0):
     H = -0.5*delta*sigma_x + 0.5*epsilon*sigma_z
     return H
 
+def generate_quantum_battery_hamiltonian(w0, wc, Omega, f, a, a_dagger):
+    """
+    Returns
+    -------
+    np.ndarray
+        Hamiltonian of the quantum battery model https://arxiv.org/pdf/2312.06389.pdf
+        $H = w0 * sigma_plus @ sigma_min + wc * a^\dag @ a + f(t) * Omega * (sigma_plus @ a + sigma_min @ a^\dag)
+    """
+    sigma_plus = np.array([[0, 0], [1, 0]], dtype=complex)
+    sigma_min = np.array([[0, 1j], [0, 0]], dtype=complex)
+    H = w0 * np.kron(sigma_plus @ sigma_min, np.eye(a.shape[0])) + wc * np.kron(np.eye(2), a_dagger @ a) + f * Omega * (np.kron(sigma_plus, a) + np.kron(sigma_min, a_dagger))
+    return H
+
 def generate_auxiallary_operators(N_trunc, rescale_aux=True):
     """
     Computes the auxillary operators that are used in some of the

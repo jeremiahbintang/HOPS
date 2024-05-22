@@ -1,6 +1,8 @@
 import numpy as np
 from scipy.linalg import svd
 from numpy.linalg import qr
+from ..util.rq import rq
+
 
 class MPS:
     """
@@ -197,6 +199,45 @@ class MPS:
             print("[WARNING]: Large error", error, "> 1.e-3 detected")
         return error
     
+    def left_canonicalize(self):
+        """
+        canonicalizes this MPS.
+        After calling this function, the MPS will be in left-canonical form
+        """
+        
+        for i in range(self.L - 1):
+            B = self.Bs[i] # vL vR i
+            chi_vL, chi_vR, chi_i = B.shape
+            B = np.transpose(B, (0, 2, 1)) # vL vR i -> vL i vR
+            B = np.reshape(B, (chi_vL * chi_i, -1)) # vL i vR -> (vL i) vR
+            U, S, Vh = np.linalg.svd(B, full_matrices=False) # (vL i) vR -> (vL i) s; s s; s vR #Change to QR
+            new_B = np.reshape(U, (chi_vL, chi_i, -1)) # (vL i) s -> vL i s
+            self.Bs[i] = np.transpose(new_B, (0, 2, 1)) # vL i s -> vL s i
+            B_next = np.tensordot(np.diag(S), Vh, ([1], [0])) # s [s]; [s] vR -> s vR
+            B_next = np.tensordot(B_next, self.Bs[i+1], ([1], [0])) # s [vR]; [vL] vR i -> s vR i
+            self.Bs[i+1] = B_next
+        self.canonical = 'left'
+
+    def right_canonicalize(self):
+        """
+        canonicalizes this MPS.
+        After calling this function, the MPS will be in right-canonical form
+        """
+        
+        for i in range(self.L - 1, 0, -1):
+            B = self.Bs[i] # vL vR i
+            
+            chi_vL, chi_vR, chi_i = B.shape
+            B = np.transpose(B, (0, 2, 1)) # vL vR i -> vL i vR
+            B = np.reshape(B, (-1, chi_vR * chi_i)) # vL i vR -> vL (i vR)
+            U, S, Vh = svd(B, full_matrices=False)  # vL (i vR) -> vL s; s s; s (i vR) #Change to QR
+            new_B = np.reshape(Vh, (-1, chi_i, chi_vR)) # s (i vR) -> s i vR
+            self.Bs[i] = np.transpose(new_B, (0, 2, 1)) # s i vR -> s vR i
+            B_next = np.tensordot(U, np.diag(S), ([1], [0])) # vR [s]; [s] s -> vR s
+            B_next = np.tensordot(self.Bs[i-1], B_next, ([1], [0])) # vL [vR] i; [vL] s -> vL i s
+            self.Bs[i-1] = np.transpose(B_next, (0, 2, 1)) # vL i s -> vL s i 
+        self.canonical = 'right'
+
     def to_state_vector(self):
         """
         Contracts the MPS to form a state vector in Hilbert space

@@ -75,6 +75,16 @@ class HOMPS_Engine:
                 Wether to use the alternative HOPS
             'gamma_terminator' : complex
                 terminator coefficient for alternative HOPS
+            'D_max' : int
+                D max for CBE-TDVP
+            'D_tilde' : int
+                D tilde for CBE-TDVP
+            'truncation_threshold' : float
+                truncation_threshold for CBE-TDVP
+            'health_check_threshold' : float
+                health_check_threshold for CBE-TDVP
+            'enable_orthogonalization' : bool
+                enable_orthogonalization for CBE-TDVP        
         """
         options = dict(options) # create copy
         self.g = g
@@ -99,6 +109,8 @@ class HOMPS_Engine:
         self.rescale_aux = True
         self.alternative_realization = False
         self.gamma_terminator = 0
+        self.average_bond_dimensions = []
+
         if options is not None:
             if 'linear' in options:
                 self.linear = options['linear']
@@ -107,7 +119,7 @@ class HOMPS_Engine:
                 self.use_noise = options['use_noise']
                 del options['use_noise']
             if 'method' in options:
-                if options['method'] == 'RK4' or options['method'] == 'TDVP2':
+                if options['method'] in ['RK4', 'TDVP2', 'CBETDVP', 'TDVP1']:
                     self.method = options['method']
                 else:
                     print(f"Unknown method \'{options['method']}\'. Defaulting to \'RK4\'")
@@ -143,6 +155,21 @@ class HOMPS_Engine:
             if 'gamma_terminator' in options:
                 self.gamma_terminator = options['gamma_terminator']
                 del options['gamma_terminator']
+            if 'D_max' in options:
+                self.D_max = options['D_max']
+                del options['D_max']
+            if 'D_tilde' in options:
+                self.D_tilde = options['D_tilde']
+                del options['D_tilde']
+            if 'truncation_threshold' in options:
+                self.truncation_threshold = options['truncation_threshold']
+                del options['truncation_threshold']
+            if 'health_check_threshold' in options:
+                self.health_check_threshold = options['health_check_threshold']
+                del options['health_check_threshold']
+            if 'enable_orthogonalization' in options:
+                self.enable_orthogonalization = options['enable_orthogonalization']
+                del options['enable_orthogonalization']
             for key, item in options.items():
                 print("[WARNING]: Unused option", key, ":", item)
         # construct model
@@ -212,10 +239,11 @@ class HOMPS_Engine:
         try:
             for n in progressBar(range(start, N_samples)):   
                 # setup psi vector
-                if self.method == 'TDVP':
+                if self.method in ['TDVP1']:
                     self.psi = mps.MPS.init_HOMPS_MPS(psi0, self.N_bath, self.N_trunc, chi_max=self.chi_max)
                 else:
                     self.psi = mps.MPS.init_HOMPS_MPS(psi0, self.N_bath, self.N_trunc)
+
                 psis[n, 0, :] = self.extract_physical_state(self.psi)
                 # setup noise
                 if self.use_noise:
@@ -231,6 +259,7 @@ class HOMPS_Engine:
                     self.compute_debug_info(n, 0)
                 # Compute realization
                 if self.method == 'RK4':
+                    print("Using RK4")
                     # Runge-Kutta
                     if self.linear and not self.use_noise:
                         # Initial computation of the update MPO
@@ -245,16 +274,24 @@ class HOMPS_Engine:
                 else:
                     # TDVP
                     if self.method == 'TDVP2':
+                        print("Using TDVP2")
                         self.engine = tdvp.TDVP2_Engine(self.psi, self.model, self.dt, self.chi_max, self.eps)
+                    elif self.method == 'CBETDVP':
+                        print("Using CBE-TDVP")
+                        self.engine = tdvp.CBETDVP_Engine(self.psi, self.model, self.dt, self.chi_max, self.eps, D_max=self.D_max, D_tilde=self.D_tilde, truncation_threshold=self.truncation_threshold, health_check_threshold=self.health_check_threshold, enable_orthogonalization=self.enable_orthogonalization)
                     else:
+                        print("Using TDVP1")
                         self.engine = tdvp.TDVP1_Engine(self.psi, self.model, self.dt, self.chi_max, self.eps)
+                    self.average_bond_dimensions.append(self.engine.psi.get_average_bond_dim())
                     for i in range(0, self.N_steps-1):
+                        print(f"Steps: {i}")
                         self.compute_update_TDVP(i)
                         if self.linear == False:
                             self.engine.psi.norm = 1.
                         psis[n, i+1, :] = self.extract_physical_state(self.engine.psi)
                         if collect_debug_info:
                             self.compute_debug_info(n, i+1)
+                        self.average_bond_dimensions.append(self.engine.psi.get_average_bond_dim())
                 # save realization
                 if data_path is not None:
                     np.save(data_path+str(n), psis[n, :, :])
